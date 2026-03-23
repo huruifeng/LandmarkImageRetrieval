@@ -2,6 +2,7 @@
 
 import sys
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 import pandas as pd
@@ -12,7 +13,7 @@ from torch.utils.data import Dataset, DataLoader
 BACKEND    = Path(__file__).parent.parent
 TRAIN_DIR  = BACKEND / "trained_model" / "train"
 CHECKPOINT = TRAIN_DIR / "checkpoints" / "best_model.pth"
-DATA_DIR   = BACKEND / "data" / "gldv2_micro"
+DATA_DIR   = BACKEND / "trained_model" / "data" / "gldv2_micro"
 CACHE_FILE = BACKEND / "db_embeddings_cache.npz"
 
 # Make trained_model/train importable
@@ -49,14 +50,15 @@ def load_model(device: torch.device) -> LandmarkRetrievalModel:
     return model
 
 
-def load_csv_lists() -> tuple[list[str], list[int], list[str]]:
-    """Returns (db_files, db_labels, val_files)."""
+def load_csv_lists() -> tuple[list[str], list[int], list[str], list[int]]:
+    """Returns (db_files, db_labels, val_files, val_labels)."""
     train_df = pd.read_csv(DATA_DIR / "train.csv")
     val_df   = pd.read_csv(DATA_DIR / "val.csv")
     return (
         train_df["filename"].tolist(),
         train_df["landmark_id"].tolist(),
         val_df["filename"].tolist(),
+        val_df["landmark_id"].tolist(),
     )
 
 
@@ -66,15 +68,19 @@ def _extract_embeddings(
     filenames: list[str],
     image_dir: Path,
     transform,
+    on_batch: Callable[[int, int], None] | None = None,
 ) -> np.ndarray:
     dataset = _ImageListDataset(filenames, image_dir, transform)
     loader  = DataLoader(dataset, batch_size=64, num_workers=0, shuffle=False)
+    total   = len(loader)
     parts   = []
     model.eval()
     with torch.no_grad():
-        for imgs, _ in loader:
+        for i, (imgs, _) in enumerate(loader):
             emb = model.extract_embedding(imgs.to(device))
             parts.append(emb.cpu().numpy())
+            if on_batch:
+                on_batch(i + 1, total)
     return np.concatenate(parts, axis=0)
 
 
@@ -83,6 +89,7 @@ def get_db_embeddings(
     device: torch.device,
     db_files: list[str],
     transform,
+    on_batch: Callable[[int, int], None] | None = None,
 ) -> np.ndarray:
     """Return cached embeddings if valid, otherwise compute and cache them."""
     image_dir = DATA_DIR / "images"
@@ -91,11 +98,13 @@ def get_db_embeddings(
         cached = np.load(CACHE_FILE)
         if len(cached["embeddings"]) == len(db_files):
             print(f"Loaded cached embeddings ({len(db_files)} images).")
+            if on_batch:
+                on_batch(1, 1)  # signal 100 %
             return cached["embeddings"]
         print("Cache size mismatch — rebuilding embeddings…")
 
     print(f"Building embeddings for {len(db_files)} training images…")
-    embeddings = _extract_embeddings(model, device, db_files, image_dir, transform)
+    embeddings = _extract_embeddings(model, device, db_files, image_dir, transform, on_batch)
     np.savez(CACHE_FILE, embeddings=embeddings)
     print("Embeddings cached.")
     return embeddings
