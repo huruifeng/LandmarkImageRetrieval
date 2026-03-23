@@ -12,7 +12,9 @@ export default function ResultsPanel() {
     return (
       <main className="right-panel">
         <div className="empty-state">
-          <div className="empty-icon">🗺</div>
+          <div className="empty-icon" style={{ fontSize: "200px" }}>
+            🗺
+          </div>
           <p>Select a validation image on the left to retrieve similar landmarks.</p>
         </div>
       </main>
