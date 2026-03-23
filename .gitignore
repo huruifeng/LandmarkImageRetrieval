@@ -30,3 +30,6 @@ htmlcov/
 
 CLAUDE.md
 
+backend/trained_model
+backend/data
+

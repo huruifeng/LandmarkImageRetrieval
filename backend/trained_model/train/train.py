@@ -6,6 +6,8 @@ Usage:
 """
 
 import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'  # Quick fix for potential OpenMP issues on some platforms
+
 import argparse
 import time
 import torch
